@@ -57,7 +57,7 @@ class ModelLoader{
 		ModelLoader(const string& model_path,const float& mem_percentage, bool saved_model);
 
 		Status loadGraph(const std::string &graph_file_name,std::unique_ptr<tensorflow::Session> *session); 
-		void predict(const cv::Mat& image, std::vector<Tensor> &predictions,double thresholdIOU,double thresholdScore);
+		void predict(const cv::Mat& image, std::vector<Tensor> &predictions,double thresholdIOU,double thresholdScore,bool gray =false);
         Status ReadImage(const cv::Mat& image, Tensor &outTensor);
         //Status readLabelsMapFile(const string &fileName, map<int, string> &labelsMap);
 		

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+
+  
+  <!-- <arg name="model_path" value="/home/workspace_ms/efficientdet_d7_coco17_tpu-32/saved_model"/> -->
+  
+  <arg name="model_path" value="/tmp/saved_model"/>
+  <!-- <arg name="model_path" value="/tmp/saved_model/"/> -->
+  <arg name="classes_path" value="/home/workspace_ms/efficientdet_ros/src/efficientdet_deploy/data/coco_ids.names"/>
+  <arg name="memory_percentage" value= "0.3"/>
+  <arg name="rgb_image_topic" value="/rgb_cam/image_rect_color_sync"/>
+  <arg name="thermal_image_topic" value="/thermal_cam/image_rect_color"/>
+  <arg name="threshold_iou" value= "0.3"/>
+  <arg name="threshold_score" value= "0.05"/>
+  <arg name="show_opencv" value= "false"/>
+  <arg name="publish_detection_image" value= "false"/>
+  <arg name="saved_model" value= "true"/>
+  <arg name="gray_image" value= "false"/>
+ 
+
+  <!-- rosbag play -->
+  <!-- <include file="$(find efficientdet_deploy)/launch/play_rosbag.launch" /> -->
+
+  
+
+ 
+  <node pkg="efficientdet_deploy" type="efficientdet_node" name="efficientdet_node_rgb"  output="screen" required="true">
+    <param name="/model_path" value="$(arg model_path)"/>
+    <param name="/class_path" value="$(arg classes_path)"/>
+    <param name="/saved_model" value="$(arg saved_model)"/>
+    <param name="/memory_percentage" value="$(arg memory_percentage)"/>
+    <param name="/input_image" value="$(arg rgb_image_topic)"/>
+    <param name="/threshold_iou" value="$(arg threshold_iou)"/>
+    <param name="/threshold_score" value="$(arg threshold_score)"/>
+    <param name="/show_opencv" value="$(arg show_opencv)"/>
+    <param name="/publish_detection_image" value="$(arg publish_detection_image)"/>
+    <param name="/gray" value="$(arg gray_image)"/>
+
+    <param name="prediction_topic" value="/efficientdet_rgb/predictions"/>
+  </node>
+
+  
+
+  
+  
+
+</launch>

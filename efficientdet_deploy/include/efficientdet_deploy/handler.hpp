@@ -7,11 +7,11 @@
  #include <efficientdet_deploy/NetTf.hpp>
  //#include <tf_ros/NetTf.cpp>
 
- // efficientdet_ros_msgs
-#include <efficientdet_ros_msgs/BoundingBox.h>
-#include <efficientdet_ros_msgs/BoundingBoxes.h>
-#include <efficientdet_ros_msgs/CheckForObjects.h>
-#include <efficientdet_ros_msgs/ObjectCount.h>
+ // darknet_ros_msgs
+#include <darknet_ros_msgs/BoundingBox.h>
+#include <darknet_ros_msgs/BoundingBoxes.h>
+#include <darknet_ros_msgs/CheckForObjects.h>
+#include <darknet_ros_msgs/ObjectCount.h>
 
  #include "tensorflow/core/framework/tensor.h"
 #include <opencv2/imgcodecs.hpp> 
@@ -68,13 +68,13 @@ namespace efficientdet {
     /*!
     * Check for objects service callback.
     */
-    bool checkForObjectsServiceCB(efficientdet_ros_msgs::CheckForObjects::Request &req, efficientdet_ros_msgs::CheckForObjects::Response &res);
+    bool checkForObjectsServiceCB(darknet_ros_msgs::CheckForObjects::Request &req, darknet_ros_msgs::CheckForObjects::Response &res);
     
      /*!
     * predicts image
     * @param image 
     */
-    void imagePrediction(const cv::Mat& image,efficientdet_ros_msgs::BoundingBoxes &bbmsg);
+    void imagePrediction(const cv::Mat& image,darknet_ros_msgs::BoundingBoxes &bbmsg);
     
     /*!
     * publishes the image
@@ -120,6 +120,8 @@ namespace efficientdet {
  
     
     bool show_opencv_;
-    
+    bool publish_detection_image_;
+    // if the gray image is prompted
+    bool gray_;
 };
 } // namespace efficientdet

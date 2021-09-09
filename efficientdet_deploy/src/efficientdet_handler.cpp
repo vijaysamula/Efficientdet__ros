@@ -26,15 +26,15 @@ Handler::Handler(ros::NodeHandle& nodeHandle)
     // Subscribe to images to infer
   ROS_INFO("Subscribing to image topic.");
   img_subscriber_ =
-      it_.subscribe(input_image_topic_, 1, &Handler::imageCallback, this);
+      it_.subscribe(input_image_topic_, 10, &Handler::imageCallback, this);
 
   // Advertise our topics
   ROS_INFO("Advertising our output.");
   // Advertise our topics
   //pred_publisher_ = it_.advertise(pred_image_topic_, 1);
 
-  objectPublisher_ = node_handle_.advertise<efficientdet_ros_msgs::ObjectCount>("found_object", 1);
-  boundingBoxesPublisher_ = node_handle_.advertise<efficientdet_ros_msgs::BoundingBoxes>("bounding_boxes", 1);
+  objectPublisher_ = node_handle_.advertise<darknet_ros_msgs::ObjectCount>("found_object", 1);
+  boundingBoxesPublisher_ = node_handle_.advertise<darknet_ros_msgs::BoundingBoxes>("bounding_boxes", 1);
   detectionImagePublisher_ = it_.advertise("detection_image", 1);
 
   // Service servers.
@@ -97,7 +97,7 @@ void Handler::imageCallback(const sensor_msgs::ImageConstPtr& img_msg) {
   cv_bridge::CvImageConstPtr cv_img;
   cv_img = cv_bridge::toCvShare(img_msg);
   
-  efficientdet_ros_msgs::BoundingBoxes bb_msg;
+  darknet_ros_msgs::BoundingBoxes bb_msg;
   imagePrediction(cv_img->image,bb_msg);
   
   bb_msg.header.stamp = ros::Time::now();
@@ -106,11 +106,11 @@ void Handler::imageCallback(const sensor_msgs::ImageConstPtr& img_msg) {
   boundingBoxesPublisher_.publish(bb_msg);
   
   ros::Time now = ros::Time::now();
-  double diff_secs = (now.toSec()-begin.toSec());
-  std::cout<<"The FPS is ----------------------------------------------------------------:"<<(1.0 / diff_secs )<<std::endl;
+  auto diff_secs = (now.toSec()-begin.toSec());
+  std::cout<<"The FPS is ----------------------------------------------------------------:"<<(diff_secs*1000 )<<"ms"<<std::endl;
 }
 
-bool Handler::checkForObjectsServiceCB(efficientdet_ros_msgs::CheckForObjects::Request &req, efficientdet_ros_msgs::CheckForObjects::Response &res
+bool Handler::checkForObjectsServiceCB(darknet_ros_msgs::CheckForObjects::Request &req, darknet_ros_msgs::CheckForObjects::Response &res
 ){
   ROS_DEBUG("[EfficientdetObjectDetector] Start check for objects service.");
 
@@ -124,13 +124,13 @@ bool Handler::checkForObjectsServiceCB(efficientdet_ros_msgs::CheckForObjects::R
 
   
  
-  efficientdet_ros_msgs::BoundingBoxes bb_msg;
+  darknet_ros_msgs::BoundingBoxes bb_msg;
   imagePrediction(cam_image->image,bb_msg);
   bb_msg.header.stamp = ros::Time::now();
   bb_msg.header.frame_id = "efficientdet_detections";
   bb_msg.image_header = req.image.header;
 
-  efficientdet_ros_msgs::CheckForObjects::Response serviceResponse;
+  darknet_ros_msgs::CheckForObjects::Response serviceResponse;
   serviceResponse.bounding_boxes = bb_msg;
   serviceResponse.id = req.id;
   res = serviceResponse;
@@ -138,36 +138,24 @@ bool Handler::checkForObjectsServiceCB(efficientdet_ros_msgs::CheckForObjects::R
   return true;
 }
 
-void Handler::imagePrediction(const cv::Mat& image ,efficientdet_ros_msgs::BoundingBoxes &bb_msg)
+void Handler::imagePrediction(const cv::Mat& image ,darknet_ros_msgs::BoundingBoxes &bb_msg)
 {
   // Infer with net
   std::vector<Tensor> predictions;
-  net_->predict(image, predictions, thresholdIOU_,thresholdScore_);
-
-  //try {
-    // Extract results from the outputs vector
-    // auto scores = predictions[4].flat<float>();
-    // auto classes = predictions[2].flat<float>();
-    // auto numDetections = predictions[5].flat<float>();
-    // auto boxes = predictions[1].flat_outer_dims<float,3>();
-
-    auto detections = predictions[0].flat_outer_dims<float,3>();
-    
-    std::vector<size_t> goodIdxs = filterBoxes(detections, thresholdIOU_, thresholdScore_);
-    
-    // Draw bboxes and captions
-    //cvtColor(cv_img_bgr, cv_img_rgb, cv::COLOR_BGR2RGB);
-    cv::Mat outImage = image.clone();
-    bb_msg = drawBoundingBoxesOnImage(outImage, detections, labelsMap_, goodIdxs);
+  net_->predict(image, predictions, thresholdIOU_,thresholdScore_,gray_);
+  auto detections = predictions[0].flat_outer_dims<float,3>();
+  
+  std::vector<size_t> goodIdxs = filterBoxes(detections, thresholdIOU_, thresholdScore_);
+  // Draw bboxes and captions
+  //cvtColor(cv_img_bgr, cv_img_rgb, cv::COLOR_BGR2RGB);
+  cv::Mat outImage = image.clone();
+  bb_msg = drawBoundingBoxesOnImage(outImage, detections, labelsMap_, goodIdxs);
   //}
   //catch (const std::exception& e){
   //  cv_img_rgb = cv_img->image;
   //}
-
-  
-
   if(show_opencv_) visualizeCVImage(outImage, "efficientdet_detections");
-  publishDetectionImage(outImage);
+  if(publish_detection_image_) publishDetectionImage(outImage);
   // publishNumberOfDetections(numDetections(0));
   
 
@@ -203,6 +191,8 @@ bool Handler::readParameters() {
       !node_handle_.getParam("threshold_iou", thresholdIOU_) ||
       !node_handle_.getParam("threshold_score", thresholdScore_) ||
       !node_handle_.getParam("show_opencv", show_opencv_) ||
+      !node_handle_.getParam("publish_detection_image", publish_detection_image_) ||
+      !node_handle_.getParam("gray", gray_) ||
       !node_handle_.getParam("input_image", input_image_topic_))
       
       

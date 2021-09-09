@@ -16,7 +16,7 @@
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>message_generation</depend>
-  <depend>efficientdet_ros_msgs</depend>
+  <depend>darknet_ros_msgs</depend>
 
   <!-- <build_export_depend>OpenCV</build_export_depend>
   <build_export_depend>cv_bridge</build_export_depend>

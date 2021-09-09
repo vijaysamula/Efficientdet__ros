@@ -6,6 +6,7 @@
 #include <vector>
 #include <iostream>
 #include <regex>
+#include <ros/ros.h>
 
 #include "tensorflow/cc/ops/const_op.h"
 #include "tensorflow/cc/ops/image_ops.h"
@@ -40,109 +41,11 @@ using tensorflow::string;
 using tensorflow::int32;
 
 
-struct Prediction{
-	std::unique_ptr<std::vector<std::vector<float>>> boxes;
-	std::unique_ptr<std::vector<float>> scores;
-	std::unique_ptr<std::vector<int>> labels;
-};
-/** Read a model graph definition (xxx.pb) from disk, and creates a session object you can use to run it.
- */
-Status loadGraph(const string &graph_file_name,
-                 unique_ptr<tensorflow::Session> *session) {
-    tensorflow::GraphDef graph_def;
-    Status load_graph_status =
-            ReadBinaryProto(tensorflow::Env::Default(), graph_file_name, &graph_def);
-    if (!load_graph_status.ok()) {
-        return tensorflow::errors::NotFound("Failed to load compute graph at '",
-                                            graph_file_name, "'");
-    }
-    session->reset(tensorflow::NewSession(tensorflow::SessionOptions()));
-    Status session_create_status = (*session)->Create(graph_def);
-    if (!session_create_status.ok()) {
-        return session_create_status;
-    }
-    return Status::OK();
-}
-
-/** Read a labels map file (xxx.pbtxt) from disk to translate class numbers into human-readable labels.
- */
-Status readLabelsMapFile(const string &fileName, map<int, string> &labelsMap) {
-
-    // Read file into a string
-    ifstream t(fileName);
-    if (t.bad())
-        return tensorflow::errors::NotFound("Failed to load labels map at '", fileName, "'");
-    stringstream buffer;
-    buffer << t.rdbuf();
-    string fileString = buffer.str();
-
-    // Search entry patterns of type 'item { ... }' and parse each of them
-    smatch matcherEntry;
-    smatch matcherId;
-    smatch matcherName;
-    const regex reEntry("item \\{([\\S\\s]*?)\\}");
-    const regex reId("[0-9]+");
-    const regex reName("\'.+\'");
-    string entry;
-
-    auto stringBegin = sregex_iterator(fileString.begin(), fileString.end(), reEntry);
-    auto stringEnd = sregex_iterator();
-
-    int id;
-    string name;
-    for (sregex_iterator i = stringBegin; i != stringEnd; i++) {
-        matcherEntry = *i;
-        entry = matcherEntry.str();
-        regex_search(entry, matcherId, reId);
-        if (!matcherId.empty())
-            id = stoi(matcherId[0].str());
-        else
-            continue;
-        regex_search(entry, matcherName, reName);
-        if (!matcherName.empty())
-            name = matcherName[0].str().substr(1, matcherName[0].str().length() - 2);
-        else
-            continue;
-        labelsMap.insert(pair<int, string>(id, name));
-    }
-    return Status::OK();
-}
-
-/** Convert Mat image into tensor of shape (1, height, width, d) where last three dims are equal to the original dims.
- */
-Status readTensorFromMat(const Mat &mat, Tensor &outTensor) {
-
-    auto root = tensorflow::Scope::NewRootScope();
-    using namespace ::tensorflow::ops;
-
-    // Trick from https://github.com/tensorflow/tensorflow/issues/8033
-    float *p = outTensor.flat<float>().data();
-    Mat fakeMat(mat.rows, mat.cols, CV_32FC3, p);
-    mat.convertTo(fakeMat, CV_32FC3);
-
-    auto input_tensor = Placeholder(root.WithOpName("input"), tensorflow::DT_FLOAT);
-    vector<pair<string, tensorflow::Tensor>> inputs = {{"input", outTensor}};
-    auto uint8Caster = Cast(root.WithOpName("uint8_Cast"), outTensor, tensorflow::DT_UINT8);
-
-    // This runs the GraphDef network definition that we've just constructed, and
-    // returns the results in the output outTensor.
-    tensorflow::GraphDef graph;
-    TF_RETURN_IF_ERROR(root.ToGraphDef(&graph));
-
-    vector<Tensor> outTensors;
-    unique_ptr<tensorflow::Session> session(tensorflow::NewSession(tensorflow::SessionOptions()));
-
-    TF_RETURN_IF_ERROR(session->Create(graph));
-    TF_RETURN_IF_ERROR(session->Run({inputs}, {"uint8_Cast"}, {}, &outTensors));
-
-    outTensor = outTensors.at(0);
-    return Status::OK();
-}
 
 /** Draw bounding box and add caption to the image.
  *  Boolean flag _scaled_ shows if the passed coordinates are in relative units (true by default in tensorflow detection)
  */
-void drawBoundingBoxOnImage(Mat &image, double yMin, double xMin, double yMax, double xMax, double score,  string label,bool scaled=true) {
+void drawBoundingBoxOnImage(Mat &image, double yMin, double xMin, double yMax, double xMax, double score,  string label,bool scaled=false) {
     cv::Point tl, br;
     if (scaled) {
         tl = cv::Point((int) (xMin * image.cols), (int) (yMin * image.rows));
@@ -151,7 +54,7 @@ void drawBoundingBoxOnImage(Mat &image, double yMin, double xMin, double yMax, d
         tl = cv::Point((int) xMin, (int) yMin);
         br = cv::Point((int) xMax, (int) yMax);
     }
-    cv::rectangle(image, tl, br, cv::Scalar(0, 255, 255), 1);
+    cv::rectangle(image, tl, br, cv::Scalar(255, 255, 255), 10);
 
     // Ceiling the score down to 3 decimals (weird!)
     float scoreRounded = floorf(score * 1000) / 1000;
@@ -159,25 +62,25 @@ void drawBoundingBoxOnImage(Mat &image, double yMin, double xMin, double yMax, d
     string caption = label + " (" + scoreString + ")";
     
     // Adding caption of type "LABEL (X.XXX)" to the top-left corner of the bounding box
-    int fontCoeff = 12;
+    int fontCoeff = 24;
     cv::Point brRect = cv::Point(tl.x +  caption.length() *fontCoeff / 1.6, tl.y + fontCoeff);
-    cv::rectangle(image, tl, brRect, cv::Scalar(0, 255, 255), -1);
+    cv::rectangle(image, tl, brRect, cv::Scalar(0, 255, 255),4);
     cv::Point textCorner = cv::Point(tl.x, tl.y + fontCoeff * 0.9);
-    //cv::putText(image, caption, textCorner, FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 0, 0));
+    cv::putText(image, caption, textCorner, FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 0, 0));
 }
 
 /** Draw bounding boxes and add captions to the image.
  *  Box is drawn only if corresponding score is higher than the _threshold_.
  */
-efficientdet_ros_msgs::BoundingBoxes drawBoundingBoxesOnImage(Mat &image,
+darknet_ros_msgs::BoundingBoxes drawBoundingBoxesOnImage(Mat &image,
                               tensorflow::TTypes<float>::Flat &scores,
                               tensorflow::TTypes<float>::Flat &classes,
                               tensorflow::TTypes<float,3>::Tensor &boxes,
                               vector<string>  &labelsMap, 
                               vector<size_t> &idxs) {
-    efficientdet_ros_msgs::BoundingBoxes boundingBoxesResults;
+    darknet_ros_msgs::BoundingBoxes boundingBoxesResults;
     for (int j = 0; j < idxs.size(); j++) {
-        efficientdet_ros_msgs::BoundingBox boundingBox;
+        darknet_ros_msgs::BoundingBox boundingBox;
         drawBoundingBoxOnImage(image,
                                boxes(0,idxs.at(j),0), boxes(0,idxs.at(j),1),
                                boxes(0,idxs.at(j),2), boxes(0,idxs.at(j),3),
@@ -201,24 +104,30 @@ efficientdet_ros_msgs::BoundingBoxes drawBoundingBoxesOnImage(Mat &image,
     return boundingBoxesResults;
 }
 
-efficientdet_ros_msgs::BoundingBoxes drawBoundingBoxesOnImage(Mat &image,
+darknet_ros_msgs::BoundingBoxes drawBoundingBoxesOnImage(Mat &image,
                               tensorflow::TTypes<float, 3>::Tensor &detections,
                               vector<string>  &labelsMap, 
                               vector<size_t> &idxs) {
-    efficientdet_ros_msgs::BoundingBoxes boundingBoxesResults;
+    darknet_ros_msgs::BoundingBoxes boundingBoxesResults;
+    
     for (int j = 0; j < idxs.size(); j++) {
-        efficientdet_ros_msgs::BoundingBox boundingBox;
+        darknet_ros_msgs::BoundingBox boundingBox;
+        float classLabel = detections(0,idxs.at(j),6);
+        if (classLabel >(labelsMap.size()-1))
+            classLabel =0;
+        if (labelsMap[classLabel]!="person") continue;
+        
         drawBoundingBoxOnImage(image,
                                detections(0,idxs.at(j),1), detections(0,idxs.at(j),2),
                                detections(0,idxs.at(j),3), detections(0,idxs.at(j),4),
-                               detections(0,idxs.at(j),5),labelsMap[detections(0,idxs.at(j),6)]
+                               detections(0,idxs.at(j),5),labelsMap[classLabel]
                                );
-        double ymin = detections(0,idxs.at(j),1);
-        double xmin = detections(0,idxs.at(j),2);
-        double ymax = detections(0,idxs.at(j),3);
-        double xmax = detections(0,idxs.at(j),4);
+        auto ymin = detections(0,idxs.at(j),1);
+        auto xmin = detections(0,idxs.at(j),2);
+        auto ymax = detections(0,idxs.at(j),3);
+        auto xmax = detections(0,idxs.at(j),4);
 
-        boundingBox.Class = labelsMap[detections(0,idxs.at(j),6)];
+        boundingBox.Class = labelsMap[classLabel];
         boundingBox.id = static_cast<int8_t>(j);
         boundingBox.probability = detections(0,idxs.at(j),5);
         boundingBox.xmin = xmin;
@@ -268,6 +177,8 @@ vector<size_t> filterBoxes(tensorflow::TTypes<float>::Flat &scores,
             i++;
             continue;
         }
+
+        
         
         Rect2f box1 = Rect2f(Point2f(boxes(0, sortIdxs.at(i), 1), boxes(0, sortIdxs.at(i), 0)),
                              Point2f(boxes(0, sortIdxs.at(i), 3), boxes(0, sortIdxs.at(i), 2)));
@@ -298,32 +209,40 @@ vector<size_t> filterBoxes(tensorflow::TTypes<float, 3>::Tensor &detections,
 
     
 
-    vector<size_t> sortIdxs(detections.dimension(2));
+    vector<size_t> sortIdxs(detections.dimension(1));
     iota(sortIdxs.begin(), sortIdxs.end(), 0);
     
     // Create set of "bad" idxs
     set<size_t> badIdxs = set<size_t>();
     size_t i = 0;
     while (i < sortIdxs.size()) {
-        if (detections(0,sortIdxs.at(i),5) < thresholdScore)
+        float score1 = detections(0,sortIdxs.at(i),5);
+        float label1 = detections(0,sortIdxs.at(i),6);
+        if ( score1< thresholdScore) {
             badIdxs.insert(sortIdxs[i]);
+         
+        }
         if (badIdxs.find(sortIdxs.at(i)) != badIdxs.end()) {
             i++;
             continue;
         }
         
-        Rect2f box1 = Rect2f(Point2f(detections(0, sortIdxs.at(i), 2), detections(0, sortIdxs.at(i), 1)),
-                             Point2f(detections(0, sortIdxs.at(i), 4), detections(0, sortIdxs.at(i), 3)));
-        for (size_t j = i + 1; j < sortIdxs.size(); j++) {
-            if ((detections(0,sortIdxs.at(i),5)) < thresholdScore) {
-                badIdxs.insert(sortIdxs[j]);
-                continue;
-            }
-            Rect2f box2 = Rect2f(Point2f(detections(0, sortIdxs.at(i), 2), detections(0, sortIdxs.at(i), 1)),
-                             Point2f(detections(0, sortIdxs.at(i), 4), detections(0, sortIdxs.at(i), 3)));
-            if (IOU(box1, box2) > thresholdIOU)
-                badIdxs.insert(sortIdxs[j]);
-        }
+        // Rect2f box1 = Rect2f(Point2f(detections(0, sortIdxs.at(i), 2), detections(0, sortIdxs.at(i), 1)),
+        //                      Point2f(detections(0, sortIdxs.at(i), 4), detections(0, sortIdxs.at(i), 3)));
+        // for (size_t j = i + 1; j < sortIdxs.size(); j++) {
+        //     float score2 = detections(0,sortIdxs.at(j),5);
+        //     float label2 = detections(0,sortIdxs.at(j),6);
+        //     if (label2 == label1) {
+        //     if (score2 < thresholdScore) {
+        //         badIdxs.insert(sortIdxs[j]);
+        //         continue;
+        //     }
+        //     Rect2f box2 = Rect2f(Point2f(detections(0, sortIdxs.at(j), 2), detections(0, sortIdxs.at(j), 1)),
+        //                      Point2f(detections(0, sortIdxs.at(j), 4), detections(0, sortIdxs.at(j), 3)));
+        //     if (IOU(box1, box2) > thresholdIOU)
+        //         badIdxs.insert(sortIdxs[j]);
+        //     }
+        // }
         i++;
     }
     
@@ -332,7 +251,7 @@ vector<size_t> filterBoxes(tensorflow::TTypes<float, 3>::Tensor &detections,
     for (auto it = sortIdxs.begin(); it != sortIdxs.end(); it++)
         if (badIdxs.find(sortIdxs.at(*it)) == badIdxs.end())
             goodIdxs.push_back(*it);
-
+    
     return goodIdxs;
 }
 void visualizeCVImage(const cv::Mat &img, const std::string &window_name){

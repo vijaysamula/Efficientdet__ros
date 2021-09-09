@@ -93,11 +93,15 @@ Status ModelLoader::loadGraph(const std::string &graph_file_name,
 
 
 
-void ModelLoader::predict(const cv::Mat& image, std::vector<Tensor> &predictions,double thresholdIOU=0.8,double thresholdScore=0.5){
+void ModelLoader::predict(const cv::Mat& image, std::vector<Tensor> &predictions,double thresholdIOU=0.8,double thresholdScore=0.5,bool gray){
 	// Get dimensions
 	unsigned int cv_img_h = image.rows;
 	unsigned int cv_img_w = image.cols;
-	unsigned int cv_img_d = image.channels();
+	unsigned int cv_img_d;
+	if (gray)
+		cv_img_d = 3;
+	else 
+	   cv_img_d = image.channels();
 
 	Tensor image_output(tensorflow::DT_FLOAT, {1, cv_img_h, cv_img_w, cv_img_d});
 	auto read_status = ReadImage(image, image_output);
